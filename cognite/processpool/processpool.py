@@ -1,4 +1,3 @@
-import logging
 import queue
 import time
 from concurrent.futures import Future
@@ -10,7 +9,7 @@ class WorkerDiedException(Exception):
     pass
 
 
-class ProcessPoolShuttingDownException(Exception):
+class ProcessPoolShutDownException(Exception):
     pass
 
 
@@ -80,7 +79,7 @@ class ProcessPool:
     def join(self):
         self.shutting_down = True
         if self.terminated:
-            raise ProcessPoolShuttingDownException("Can not join a WorkerPool that has been terminated")
+            raise ProcessPoolShutDownException("Can not join a WorkerPool that has been terminated")
         while not self._job_queue.empty() or any(worker.busy_with_future for worker in self._pool):
             time.sleep(0.01)
         self.terminate()  # could be gentler on the children
@@ -89,6 +88,7 @@ class ProcessPool:
         self.terminated = True
         for worker in self._pool:
             worker.process.terminate()
+        self._job_queue.put(None)  # in case it's blocking
 
     def _job_manager_thread(self):
         """Manages dispatching jobs to processes, checking results, sending them to futures and restarting if they die"""
@@ -129,12 +129,14 @@ class ProcessPool:
                 else:  # no jobs are running, so we can block
                     job = self._job_queue.get(block=True)
 
+                if job is None:
+                    return
                 self._pool[idle_procs[0]].send(job)
 
     def run_job(self, *args, **kwargs) -> Future:
         """Runs job, will call the `run` method in worker_class with the arguments given, all of which should be picklable."""
         if self.terminated or self.shutting_down:
-            raise ProcessPoolShuttingDownException("Worker pool shutting down or terminated, can not submit new jobs")
+            raise ProcessPoolShutDownException("Worker pool shutting down or terminated, can not submit new jobs")
         future = Future()
         self._job_queue.put((args, kwargs, future))
         return future

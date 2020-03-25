@@ -2,12 +2,11 @@ import time
 
 import pytest
 
-from cognite.processpool import ProcessPool, WorkerDiedException
+from cognite.processpool import ProcessPool, ProcessPoolShutDownException, WorkerDiedException
 
 
 class SquareNumberWorker:
     def run(self, msg, num, *args):
-        print("in run", msg, num, args)
         time.sleep(0.1)
         if num == 1337:
             a = []
@@ -38,7 +37,7 @@ def test_crash():
     assert not pool.terminated
     assert not pool.shutting_down
     pool.join()
-
+    assert pool.terminated
     assert 1 == f1.result()
     assert 9 == f3.result()
     with pytest.raises(WorkerDiedException):
@@ -51,3 +50,31 @@ def test_exception():
     with pytest.raises(ValueError) as excinfo:
         f1.result()
     assert "unlucky" in str(excinfo.value)
+    pool.join()
+    assert pool.terminated
+
+
+def test_submit_or_join_after_join():
+    pool = ProcessPool(SquareNumberWorker, 1)
+    f1 = pool.run_job("transform", 0)
+    assert 0 == f1.result()
+    pool.join()
+    assert pool.terminated
+    with pytest.raises(ProcessPoolShutDownException) as excinfo:
+        pool.run_job("transform", 13)
+    with pytest.raises(ProcessPoolShutDownException) as excinfo:
+        pool.join()
+    assert pool.terminated
+
+
+def test_submit_or_join_after_terminate():
+    pool = ProcessPool(SquareNumberWorker, 1)
+    f1 = pool.run_job("transform", 0)
+    pool.terminate()
+    with pytest.raises(WorkerDiedException):
+        f1.result()
+    with pytest.raises(ProcessPoolShutDownException) as excinfo:
+        pool.run_job("transform", 13)
+    with pytest.raises(ProcessPoolShutDownException) as excinfo:
+        pool.join()
+    assert pool.terminated
