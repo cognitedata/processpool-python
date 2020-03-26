@@ -3,13 +3,22 @@ import time
 from concurrent.futures import Future
 from multiprocessing import Process, Queue
 from threading import Thread
+from typing import Any
+
+SLEEP_TICK = 0.001  # Duration in seconds used to sleep when waiting for results
 
 
 class WorkerDiedException(Exception):
-    pass
+    """Raised when getting the result of a job where the process died while executing it for any reason."""
+
+    def __init__(self, message, code):
+        self.code = code
+        super().__init__(message)
 
 
 class ProcessPoolShutDownException(Exception):
+    """Raised when submitting jobs to a process pool that has been .join()ed or .terminate()d"""
+
     pass
 
 
@@ -36,7 +45,8 @@ class _WorkerHandler:
         except queue.Empty:
             if not self.process.is_alive():
                 raise WorkerDiedException(
-                    f"{self.process.name} terminated unexpectedly with exit code  {self.process.exitcode} while running job."
+                    f"{self.process.name} terminated unexpectedly with exit code  {self.process.exitcode} while running job.",
+                    self.process.exitcode,
                 )
             return None
 
@@ -77,14 +87,16 @@ class ProcessPool:
         return _WorkerHandler(self.worker_class)
 
     def join(self):
+        """Waits for jobs to finish and shuts down the pool."""
         self.shutting_down = True
         if self.terminated:
             raise ProcessPoolShutDownException("Can not join a WorkerPool that has been terminated")
         while not self._job_queue.empty() or any(worker.busy_with_future for worker in self._pool):
-            time.sleep(0.01)
+            time.sleep(SLEEP_TICK)
         self.terminate()  # could be gentler on the children
 
     def terminate(self):
+        """Kills all sub-processes and stops the pool immediately."""
         self.terminated = True
         for worker in self._pool:
             worker.process.terminate()
@@ -116,27 +128,31 @@ class ProcessPool:
                 else:
                     idle_procs.append(wix)
 
-                if not idle_procs:
-                    time.sleep(0.01)
+            if not idle_procs:
+                time.sleep(SLEEP_TICK)
+                continue
+
+            if busy_procs:
+                try:
+                    job = self._job_queue.get(block=False)
+                except queue.Empty:
+                    time.sleep(SLEEP_TICK)
                     continue
+            else:  # no jobs are running, so we can block
+                job = self._job_queue.get(block=True)
 
-                if busy_procs:
-                    try:
-                        job = self._job_queue.get(block=False)
-                    except queue.Empty:
-                        time.sleep(0.01)
-                        continue
-                else:  # no jobs are running, so we can block
-                    job = self._job_queue.get(block=True)
+            if job is None:
+                return
+            self._pool[idle_procs[0]].send(job)
 
-                if job is None:
-                    return
-                self._pool[idle_procs[0]].send(job)
-
-    def run_job(self, *args, **kwargs) -> Future:
-        """Runs job, will call the `run` method in worker_class with the arguments given, all of which should be picklable."""
+    def submit_job(self, *args, **kwargs) -> Future:
+        """Submits job asynchronously, which will eventually call the `run` method in worker_class with the arguments given, all of which should be picklable."""
         if self.terminated or self.shutting_down:
             raise ProcessPoolShutDownException("Worker pool shutting down or terminated, can not submit new jobs")
         future = Future()
         self._job_queue.put((args, kwargs, future))
         return future
+
+    def run_job(self, *args, **kwargs) -> Any:
+        """Submits job and blocks to wait for result. Returns the result or raises any Exception encountered. Should typically only be called from a thread."""
+        return self.submit_job(*args, **kwargs).result()
