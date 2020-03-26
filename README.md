@@ -1,5 +1,5 @@
 # cognite-processpool
-Library for multiprocessing which guarantees
+Library for multiprocessing which guarantees worker processes restarting on death.
 
 ## Example use
 Basic use:    
