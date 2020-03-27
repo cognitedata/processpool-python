@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "cognite-processpool"
-version = "0.1.0"
-description = "Stable proc"
+version = "0.2.0"
+description = "Stable process pool library"
 authors = ["Sander Land <sander.land@cognite.com>"]
 
 packages = [
