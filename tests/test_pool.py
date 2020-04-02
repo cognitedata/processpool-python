@@ -1,4 +1,5 @@
 import time
+import traceback
 
 import pytest
 
@@ -55,6 +56,17 @@ def test_exception():
     with pytest.raises(ValueError) as excinfo:
         f1.result()
     assert "unlucky" in str(excinfo.value)
+    pool.join()
+    assert pool.terminated
+
+
+def test_exception_traceback():
+    pool = ProcessPool(CrashingSquareNumberWorker, 1)
+    f1 = pool.submit_job("transform", 13)
+    exc = f1.exception()
+    assert exc is not None
+    exc_traceback = "".join(traceback.TracebackException.from_exception(exc).format())
+    assert " line 22, in run" in exc_traceback
     pool.join()
     assert pool.terminated
 

@@ -1,9 +1,12 @@
 import queue
+import sys
 import time
 from concurrent.futures import Future
 from multiprocessing import Process, Queue
 from threading import Thread
 from typing import Any
+
+from tblib import pickling_support
 
 SLEEP_TICK = 0.001  # Duration in seconds used to sleep when waiting for results
 
@@ -20,6 +23,13 @@ class ProcessPoolShutDownException(Exception):
     """Raised when submitting jobs to a process pool that has been .join()ed or .terminate()d"""
 
     pass
+
+
+@pickling_support.install
+class _WrappedWorkerException(Exception):  # we need this since tracebacks aren't pickled by default and therefore lost
+    def __init__(self, exception):
+        self.exception = exception
+        __, __, self.traceback = sys.exc_info()
 
 
 class _WorkerHandler:
@@ -41,6 +51,10 @@ class _WorkerHandler:
             return None
         try:
             ret, err = self.recv_q.get(block=False)
+            if err:
+                unwrapped_err = err.exception  # unwrap
+                unwrapped_err.__traceback__ = err.traceback
+                err = unwrapped_err
             return ret, err
         except queue.Empty:
             if not self.process.is_alive():
@@ -59,7 +73,7 @@ class _WorkerHandler:
                 result = worker.run(*args, **kwargs)
                 error = None
             except Exception as e:
-                error = e
+                error = _WrappedWorkerException(e)
                 result = None
             recv_q.put((result, error))
 

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "cognite-processpool"
-version = "0.2.0"
+version = "0.3.0"
 description = "Stable process pool library"
 authors = ["Sander Land <sander.land@cognite.com>"]
 
@@ -18,11 +18,12 @@ line_length=120                # corresponds to -w  flag
 multi_line_output=3            # corresponds to -m  flag
 include_trailing_comma=true    # corresponds to -tc flag
 skip_glob = '^((?!py$).)*$'    # this makes sort all Python files
-known_third_party = ["pytest"]
+known_third_party = ["pytest", "tblib"]
 
 
 [tool.poetry.dependencies]
 python = "^3.7"
+tblib = "^1.6.0"
 
 [tool.poetry.dev-dependencies]
 isort = "^4.3.21"
