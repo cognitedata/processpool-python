@@ -1,8 +1,9 @@
+import multiprocessing
+import pickle
 import queue
 import sys
 import time
 from concurrent.futures import Future
-from multiprocessing import Process, Queue
 from threading import Thread
 from typing import Any
 
@@ -36,21 +37,26 @@ class _WorkerHandler:
     def __init__(self, worker_class: type):  # Runs in the main process
         self.worker_class = worker_class
         self.busy_with_future = None
-        self.send_q = Queue()
-        self.recv_q = Queue()
-        self.process = Process(target=self._worker_job_loop, args=(self.worker_class, self.recv_q, self.send_q))
+        self.send_q = multiprocessing.Queue()  # type: multiprocessing.Queue
+        self.recv_q = multiprocessing.Queue()  # type: multiprocessing.Queue
+        self.process = multiprocessing.Process(
+            target=self._worker_job_loop, args=(self.worker_class, self.recv_q, self.send_q)
+        )
         self.process.start()
 
     def send(self, job):
         args, kwargs, future = job
         self.busy_with_future = future
-        self.send_q.put((args, kwargs))
+        try:
+            self.send_q.put(pickle.dumps((args, kwargs)))
+        except Exception as error:  # pickle errors
+            self.recv_q.put(pickle.dumps((None, _WrappedWorkerException(error))))
 
     def result(self):
         if not self.busy_with_future:
             return None
         try:
-            ret, err = self.recv_q.get(block=False)
+            ret, err = pickle.loads(self.recv_q.get(block=False))
             if err:
                 unwrapped_err = err.exception  # unwrap
                 unwrapped_err.__traceback__ = err.traceback
@@ -65,17 +71,22 @@ class _WorkerHandler:
             return None
 
     @staticmethod
-    def _worker_job_loop(worker_class: type, recv_q: Queue, send_q: Queue):  # Runs in a subprocess
+    def _worker_job_loop(
+        worker_class: type, recv_q: multiprocessing.Queue, send_q: multiprocessing.Queue
+    ):  # Runs in a subprocess
         worker = worker_class()
         while True:
-            args, kwargs = send_q.get(block=True)
+            args, kwargs = pickle.loads(send_q.get(block=True))
             try:
                 result = worker.run(*args, **kwargs)
                 error = None
             except Exception as e:
                 error = _WrappedWorkerException(e)
                 result = None
-            recv_q.put((result, error))
+            try:
+                recv_q.put(pickle.dumps((result, error)))
+            except Exception as error:  # try to catch pickle error - not working!
+                recv_q.put(pickle.dumps((None, _WrappedWorkerException(error))))
 
 
 class ProcessPool:
@@ -93,7 +104,7 @@ class ProcessPool:
 
         self._pool = [self._create_new_worker() for _ in range(pool_size)]
 
-        self._job_queue = queue.Queue()  # no need for a MP queue here
+        self._job_queue = queue.Queue()  # type: queue.Queue # no need for a MP queue here
         self._job_loop = Thread(target=self._job_manager_thread, daemon=True)
         self._job_loop.start()
 
@@ -163,7 +174,7 @@ class ProcessPool:
         """Submits job asynchronously, which will eventually call the `run` method in worker_class with the arguments given, all of which should be picklable."""
         if self.terminated or self.shutting_down:
             raise ProcessPoolShutDownException("Worker pool shutting down or terminated, can not submit new jobs")
-        future = Future()
+        future = Future()  # type: Future
         self._job_queue.put((args, kwargs, future))
         return future
 
