@@ -1,7 +1,20 @@
-# cognite-processpool
+
+<a href="https://cognite.com/">
+    <img src="https://github.com/cognitedata/cognite-python-docs/blob/master/img/cognite_logo.png" alt="Cognite logo" title="Cognite" align="right" height="80" />
+</a>
+
+Cognite ProcessPool Library
+===========================
+
+[![Release Status](https://github.com/cognitedata/power-sdk/workflows/release/badge.svg)](https://github.com/cognitedata/power-sdk/actions)
+[![Build Status](https://github.com/cognitedata/power-sdk/workflows/test_and_build/badge.svg)](https://github.com/cognitedata/power-sdk/actions)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/ambv/black)
+
 Library for multiprocessing which guarantees worker processes restarting on death.
 
-## Example use
+Example use
+-----------
+
 Basic use:    
     
     from cognite.processpool import ProcessPool, WorkerDiedException    
