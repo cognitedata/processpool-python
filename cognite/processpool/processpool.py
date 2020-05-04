@@ -80,6 +80,8 @@ class _WorkerHandler:
             try:
                 result = worker.run(*args, **kwargs)
                 error = None
+            except MemoryError:  # py 3.8 consistent error
+                raise WorkerDiedException(f"Process encountered MemoryError while running job.", "MemoryError")
             except Exception as e:
                 error = _WrappedWorkerException(e)
                 result = None
