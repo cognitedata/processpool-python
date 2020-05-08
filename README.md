@@ -7,6 +7,7 @@ Cognite ProcessPool Library
 ===========================
 
 [![Release Status](https://github.com/cognitedata/processpool-python/workflows/release/badge.svg)](https://github.com/cognitedata/processpool-python/actions)
+[![PyPI version](https://badge.fury.io/py/cognite-processpool.svg)](https://pypi.org/project/cognite-processpool/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/ambv/black)
 
 Library for multiprocessing which guarantees worker processes restarting on death.
