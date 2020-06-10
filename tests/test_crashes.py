@@ -6,6 +6,12 @@ import pytest
 from cognite.processpool import ProcessPool, ProcessPoolShutDownException, WorkerDiedException
 
 
+class ExceptionWithLambda(Exception):
+    def __init__(self, msg):
+        super().__init__(msg)
+        self._unwrap_fn = lambda x: x
+
+
 class CrashingSquareNumberWorker:
     def run(self, msg, num, *args):
         time.sleep(0.1)
@@ -18,6 +24,11 @@ class CrashingSquareNumberWorker:
         return num * num
 
 
+class ExceptionLambdaWorker:
+    def run(self):
+        raise ExceptionWithLambda("annoying")
+
+
 def test_exception():
     pool = ProcessPool(CrashingSquareNumberWorker, 1)
     f1 = pool.submit_job("transform", 13)
@@ -28,13 +39,24 @@ def test_exception():
     assert pool.terminated
 
 
+def test_exception_lambda():
+    pool = ProcessPool(ExceptionLambdaWorker, 1)
+    f1 = pool.submit_job()
+    with pytest.raises(Exception) as excinfo:
+        f1.result()
+    assert "Exception originally of type ExceptionWithLambda" in str(excinfo)
+    assert "annoying" in str(excinfo)
+    pool.join()
+    assert pool.terminated
+
+
 def test_exception_traceback():
     pool = ProcessPool(CrashingSquareNumberWorker, 1)
     f1 = pool.submit_job("transform", 13)
     exc = f1.exception()
     assert exc is not None
     exc_traceback = "".join(traceback.TracebackException.from_exception(exc).format())
-    assert " line 17, in run" in exc_traceback
+    assert "Traceback (most recent call last)" in exc_traceback
     pool.join()
     assert pool.terminated
 
