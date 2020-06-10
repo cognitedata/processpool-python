@@ -28,9 +28,12 @@ class ProcessPoolShutDownException(Exception):
 
 @pickling_support.install
 class _WrappedWorkerException(Exception):  # we need this since tracebacks aren't pickled by default and therefore lost
-    def __init__(self, exception):
+    def __init__(self, exception, traceback=None):
         self.exception = exception
-        __, __, self.traceback = sys.exc_info()
+        if traceback is None:
+            __, __, self.traceback = sys.exc_info()
+        else:
+            self.traceback = traceback
 
 
 class _WorkerHandler:
@@ -80,15 +83,26 @@ class _WorkerHandler:
             try:
                 result = worker.run(*args, **kwargs)
                 error = None
+                str_error = ""
             except MemoryError:  # py 3.8 consistent error
                 raise WorkerDiedException(f"Process encountered MemoryError while running job.", "MemoryError")
             except Exception as e:
+                str_error = str(e)
                 error = _WrappedWorkerException(e)
                 result = None
             try:
                 recv_q.put(pickle.dumps((result, error)))
-            except Exception as error:  # try to catch pickle error - not working!
-                recv_q.put(pickle.dumps((None, _WrappedWorkerException(error))))
+            except Exception as pickle_error:  # lambdas and such -> convert to a base exception
+                if error:  # error in pickling the exception
+                    basic_exc = Exception(
+                        str_error
+                        + f"\nException originally of type {error.exception.__class__.__name__} but could not be pickled due to {pickle_error}"
+                    )
+                    error = _WrappedWorkerException(basic_exc, traceback=error.traceback)
+                else:  # error in pickling the result
+                    result = None
+                    error = _WrappedWorkerException(pickle_error)
+                recv_q.put(pickle.dumps((result, error)))
 
 
 class ProcessPool:
