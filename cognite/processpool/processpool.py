@@ -15,9 +15,27 @@ SLEEP_TICK = 0.001  # Duration in seconds used to sleep when waiting for results
 class WorkerDiedException(Exception):
     """Raised when getting the result of a job where the process died while executing it for any reason."""
 
-    def __init__(self, message, code):
+    def __init__(self, message, code=None):
         self.code = code
+        self.message = message
+
+    def __reduce__(self):
+        return (WorkerDiedException, (self.message, self.code))
+
+
+class JobFailedException(Exception):
+    """Raised when a job fails with a normal exception."""
+
+    def __init__(self, message, original_exception_type=None):
+        self.original_exception_type = original_exception_type
+        self.message = message
         super().__init__(message)
+
+    def __str__(self):
+        return f"{self.__class__.__name__}: {self.original_exception_type}({self.message})"
+
+    def __reduce__(self):
+        return (JobFailedException, (self.message, self.original_exception_type))
 
 
 class ProcessPoolShutDownException(Exception):
@@ -28,8 +46,9 @@ class ProcessPoolShutDownException(Exception):
 
 @pickling_support.install
 class _WrappedWorkerException(Exception):  # we need this since tracebacks aren't pickled by default and therefore lost
-    def __init__(self, exception, traceback=None):
-        self.exception = exception
+    def __init__(self, exception_str, exception_cls=None, traceback=None):
+        # don't pickle problematic exception classes
+        self.exception = JobFailedException(exception_str, exception_cls)
         if traceback is None:
             __, __, self.traceback = sys.exc_info()
         else:
@@ -53,7 +72,7 @@ class _WorkerHandler:
         try:
             self.send_q.put(pickle.dumps((args, kwargs)))
         except Exception as error:  # pickle errors
-            self.recv_q.put(pickle.dumps((None, _WrappedWorkerException(error))))
+            self.recv_q.put(pickle.dumps((None, _WrappedWorkerException(str(error), error.__class__.__name__))))
 
     def result(self):
         if not self.busy_with_future:
@@ -83,26 +102,16 @@ class _WorkerHandler:
             try:
                 result = worker.run(*args, **kwargs)
                 error = None
-                str_error = ""
             except MemoryError:  # py 3.8 consistent error
                 raise WorkerDiedException(f"Process encountered MemoryError while running job.", "MemoryError")
             except Exception as e:
-                str_error = str(e)
-                error = _WrappedWorkerException(e)
+                error = _WrappedWorkerException(str(e), e.__class__.__name__)
                 result = None
             try:
                 recv_q.put(pickle.dumps((result, error)))
-            except Exception as pickle_error:  # lambdas and such -> convert to a base exception
-                if error:  # error in pickling the exception
-                    basic_exc = Exception(
-                        str_error
-                        + f"\nException originally of type {error.exception.__class__.__name__} but could not be pickled due to {pickle_error}"
-                    )
-                    error = _WrappedWorkerException(basic_exc, traceback=error.traceback)
-                else:  # error in pickling the result
-                    result = None
-                    error = _WrappedWorkerException(pickle_error)
-                recv_q.put(pickle.dumps((result, error)))
+            except Exception as e:
+                error = _WrappedWorkerException(str(e), e.__class__.__name__)
+                recv_q.put(pickle.dumps((None, error)))
 
 
 class ProcessPool:
