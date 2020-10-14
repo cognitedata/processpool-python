@@ -4,12 +4,22 @@ import traceback
 import pytest
 
 from cognite.processpool import ProcessPool, ProcessPoolShutDownException, WorkerDiedException
+from cognite.processpool.processpool import JobFailedException
 
 
 class ExceptionWithLambda(Exception):
     def __init__(self, msg):
         super().__init__(msg)
         self._unwrap_fn = lambda x: x
+
+
+class AuthHTTPError(Exception):
+    def __init__(self, reason: str, response: str):
+        self.reason = reason
+        self.response = response
+
+    def __str__(self):
+        return f"HTTP error in authentication. {self.reason}"
 
 
 class CrashingSquareNumberWorker:
@@ -29,12 +39,13 @@ class ExceptionLambdaWorker:
         raise ExceptionWithLambda("annoying")
 
 
-def test_exception():
+def test_plain_exception():
     pool = ProcessPool(CrashingSquareNumberWorker, 1)
     f1 = pool.submit_job("transform", 13)
-    with pytest.raises(ValueError) as excinfo:
+    with pytest.raises(JobFailedException) as excinfo:
         f1.result()
-    assert "unlucky" in str(excinfo.value)
+    assert "ValueError" == str(excinfo.value.original_exception_type)
+    assert "JobFailedException: ValueError(Got unlucky!)" == str(excinfo.value)
     pool.join()
     assert pool.terminated
 
@@ -44,8 +55,7 @@ def test_exception_lambda():
     f1 = pool.submit_job()
     with pytest.raises(Exception) as excinfo:
         f1.result()
-    assert "Exception originally of type ExceptionWithLambda" in str(excinfo)
-    assert "annoying" in str(excinfo)
+    assert "JobFailedException: ExceptionWithLambda(annoying)" == str(excinfo.value)
     pool.join()
     assert pool.terminated
 
@@ -78,7 +88,7 @@ def test_submit_or_join_after_terminate():
 def test_run_job_exception():
     pool = ProcessPool(CrashingSquareNumberWorker, 1)
     assert 16 == pool.run_job("transform", 4)
-    with pytest.raises(ValueError):
+    with pytest.raises(JobFailedException):
         pool.run_job("transform", 13)
     pool.join()
     assert pool.terminated
