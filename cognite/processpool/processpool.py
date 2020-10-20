@@ -1,10 +1,12 @@
+import ctypes
+import inspect
 import multiprocessing
 import pickle
 import queue
 import sys
+import threading
 import time
 from concurrent.futures import Future
-from threading import Thread
 from typing import Any
 
 from tblib import pickling_support
@@ -16,32 +18,73 @@ class WorkerDiedException(Exception):
     """Raised when getting the result of a job where the process died while executing it for any reason."""
 
     def __init__(self, message, code=None):
+        super().__init__(message, code)
         self.code = code
         self.message = message
 
-    def __reduce__(self):
-        return (WorkerDiedException, (self.message, self.code))
+
+class JobTimedOutException(Exception):
+    """Raised when getting the result of a job where the time limit was exceeded."""
 
 
 class JobFailedException(Exception):
     """Raised when a job fails with a normal exception."""
 
     def __init__(self, message, original_exception_type=None):
+        super().__init__(message, original_exception_type)
         self.original_exception_type = original_exception_type
         self.message = message
-        super().__init__(message)
 
     def __str__(self):
         return f"{self.__class__.__name__}: {self.original_exception_type}({self.message})"
-
-    def __reduce__(self):
-        return (JobFailedException, (self.message, self.original_exception_type))
 
 
 class ProcessPoolShutDownException(Exception):
     """Raised when submitting jobs to a process pool that has been .join()ed or .terminate()d"""
 
     pass
+
+
+def _async_raise(tid, exctype):
+    """raises the exception, performs cleanup if needed"""
+    if not inspect.isclass(exctype):
+        raise TypeError("Only types can be raised (not instances)")
+    res = ctypes.pythonapi.PyThreadState_SetAsyncExc(tid, ctypes.py_object(exctype))
+    if res == 0:
+        raise ValueError("invalid thread id")
+    elif res != 1:
+        # """if it returns a number greater than one, you're in trouble,
+        # and you should call it again with exc=NULL to revert the effect"""
+        ctypes.pythonapi.PyThreadState_SetAsyncExc(tid, 0)
+        raise SystemError("PyThreadState_SetAsyncExc failed")
+
+
+class Thread(threading.Thread):  # http://tomerfiliba.com/recipes/Thread2/
+    def _get_my_tid(self):
+        """determines this (self's) thread id"""
+        if not self.is_alive():
+            raise threading.ThreadError("the thread is not active")
+
+        # do we have it cached?
+        if hasattr(self, "_thread_id"):
+            return self._thread_id
+
+        # no, look for it in the _active dict
+        for tid, tobj in threading._active.items():
+            if tobj is self:
+                self._thread_id = tid
+                return tid
+
+        raise AssertionError("could not determine the thread's id")
+
+    def raise_exc(self, exctype):
+        """raises the given exception type in the context of this thread"""
+        _async_raise(self._get_my_tid(), exctype)
+
+    def terminate(self):
+        """raises SystemExit in the context of the given thread, which should
+        cause the thread to exit silently (unless caught)"""
+        self.raise_exc(SystemExit)
 
 
 @pickling_support.install
@@ -67,10 +110,10 @@ class _WorkerHandler:
         self.process.start()
 
     def send(self, job):
-        args, kwargs, future = job
+        args, kwargs, future, timeout = job
         self.busy_with_future = future
         try:
-            self.send_q.put(pickle.dumps((args, kwargs)))
+            self.send_q.put(pickle.dumps((args, kwargs, timeout)))
         except Exception as error:  # pickle errors
             self.recv_q.put(pickle.dumps((None, _WrappedWorkerException(str(error), error.__class__.__name__))))
 
@@ -97,11 +140,29 @@ class _WorkerHandler:
         worker_class: type, recv_q: multiprocessing.Queue, send_q: multiprocessing.Queue
     ):  # Runs in a subprocess
         worker = worker_class()
+        BUSY = "__process_busy__"
+        result = BUSY
+
+        def run_job(args, kwargs):
+            nonlocal result
+            result = worker.run(*args, **kwargs)
+
         while True:
-            args, kwargs = pickle.loads(send_q.get(block=True))
+            args, kwargs, timeout = pickle.loads(send_q.get(block=True))
             try:
-                result = worker.run(*args, **kwargs)
                 error = None
+                result = BUSY
+                thread = Thread(target=run_job, args=(args, kwargs), daemon=True)
+                thread.start()
+                start_time = time.time()
+                while result is BUSY:
+                    if timeout is not None and time.time() - start_time > timeout:
+                        thread.terminate()
+                        result = None
+                        error = JobTimedOutException(f"Job ran for more than {timeout} seconds and timed out")
+                        break
+                    time.sleep(SLEEP_TICK)
+                thread.join()
             except MemoryError:  # py 3.8 consistent error
                 raise WorkerDiedException(f"Process encountered MemoryError while running job.", "MemoryError")
             except Exception as e:
@@ -115,7 +176,7 @@ class _WorkerHandler:
 
 
 class ProcessPool:
-    def __init__(self, worker_class: type, pool_size: int = 1):
+    def __init__(self, worker_class: type, pool_size: int = 1, timeout=None):
         """Manages dispatching jobs to processes, checking results, sending them to futures and restarting if they die.
 
         Args:
@@ -126,12 +187,16 @@ class ProcessPool:
         self.pool_size = pool_size
         self.shutting_down = False
         self.terminated = False
+        self.timeout = timeout
 
         self._pool = [self._create_new_worker() for _ in range(pool_size)]
 
         self._job_queue = queue.Queue()  # type: queue.Queue # no need for a MP queue here
         self._job_loop = Thread(target=self._job_manager_thread, daemon=True)
         self._job_loop.start()
+
+    def set_timeout(self, timeout):
+        self.timeout = timeout
 
     def _create_new_worker(self):
         return _WorkerHandler(self.worker_class)
@@ -200,7 +265,7 @@ class ProcessPool:
         if self.terminated or self.shutting_down:
             raise ProcessPoolShutDownException("Worker pool shutting down or terminated, can not submit new jobs")
         future = Future()  # type: Future
-        self._job_queue.put((args, kwargs, future))
+        self._job_queue.put((args, kwargs, future, self.timeout))
         return future
 
     def run_job(self, *args, **kwargs) -> Any:
