@@ -103,7 +103,7 @@ class _WorkerHandler:
                 result = worker.run(*args, **kwargs)
                 error = None
             except MemoryError:  # py 3.8 consistent error
-                raise WorkerDiedException(f"Process encountered MemoryError while running job.", "MemoryError")
+                raise WorkerDiedException("Process encountered MemoryError while running job.", "MemoryError")
             except Exception as e:
                 error = _WrappedWorkerException(str(e), e.__class__.__name__)
                 result = None
@@ -146,10 +146,17 @@ class ProcessPool:
         self.terminate()  # could be gentler on the children
 
     def terminate(self):
-        """Kills all sub-processes and stops the pool immediately."""
+        """Terminates all sub-processes and stops the pool immediately."""
         self.terminated = True
         for worker in self._pool:
             worker.process.terminate()
+        self._job_queue.put(None)  # in case it's blocking
+
+    def kill(self):
+        """Kills all sub-processes and stops the pool immediately."""
+        self.terminated = True
+        for worker in self._pool:
+            worker.process.kill()
         self._job_queue.put(None)  # in case it's blocking
 
     def _job_manager_thread(self):

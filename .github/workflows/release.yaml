@@ -19,16 +19,16 @@ jobs:
     - name: Install dependencies
       run: |
         python3 -m pip install --upgrade pip poetry
-        poetry config virtualenvs.create false
+        poetry config virtualenvs.create true
+        poetry config virtualenvs.in-project true
         poetry install
 
     - name: Check codestyle
       run: |
-        black --check .
-        isort --check-only -rc .
+        poetry run pre-commit run --all-files
 
     - name: Run tests
-      run: pytest tests
+      run: poetry run pytest tests
 
     - name: Build package
       run: poetry build
