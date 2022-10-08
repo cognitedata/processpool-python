@@ -29,8 +29,7 @@ jobs:
 
     - name: Check codestyle
       run: |
-        black --check .
-        isort --check-only -rc .
+        poetry run pre-commit run --all-files
 
     - name: Run tests
       run: pytest tests
