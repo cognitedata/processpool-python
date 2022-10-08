@@ -26,13 +26,9 @@ python = "^3.7"
 tblib = "^1.6.0"
 
 [tool.poetry.dev-dependencies]
-isort = "^4.3.21"
-pre-commit = "^2.2.0"
+pre-commit = "^2.20.0"
 pytest = "^5.4.1"
 pytest-cov = "^2.8.1"
-black = "^19.10b0"
-mypy = "^0.770"
-flake8 = "^3.7.9"
 twine = "^3.1.1"
 
 
