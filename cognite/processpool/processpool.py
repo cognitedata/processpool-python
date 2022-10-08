@@ -103,7 +103,7 @@ class _WorkerHandler:
                 result = worker.run(*args, **kwargs)
                 error = None
             except MemoryError:  # py 3.8 consistent error
-                raise WorkerDiedException(f"Process encountered MemoryError while running job.", "MemoryError")
+                raise WorkerDiedException("Process encountered MemoryError while running job.", "MemoryError")
             except Exception as e:
                 error = _WrappedWorkerException(str(e), e.__class__.__name__)
                 result = None
