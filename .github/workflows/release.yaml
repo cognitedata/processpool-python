@@ -37,4 +37,4 @@ jobs:
       env:
         TWINE_USERNAME: ${{ secrets.PYPI_USER }}
         TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
-      run: twine upload --verbose dist/* || echo 'Version exists'
+      run: poetry run twine upload --verbose dist/*
