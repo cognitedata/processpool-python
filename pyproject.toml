@@ -27,8 +27,8 @@ tblib = "^1.6.0"
 
 [tool.poetry.dev-dependencies]
 pre-commit = "^2.20.0"
-pytest = "^5.4.1"
-pytest-cov = "^2.8.1"
+pytest = "^7.2.1"
+pytest-cov = "^4.0.0"
 twine = "^3.1.1"
 
 
