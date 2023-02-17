@@ -1,5 +1,6 @@
 import time
 import traceback
+from typing import Any, List, Tuple
 
 import pytest
 
@@ -8,7 +9,7 @@ from cognite.processpool.processpool import JobFailedException
 
 
 class ExceptionWithLambda(Exception):
-    def __init__(self, msg):
+    def __init__(self, msg: str):
         super().__init__(msg)
         self._unwrap_fn = lambda x: x
 
@@ -18,12 +19,12 @@ class AuthHTTPError(Exception):
         self.reason = reason
         self.response = response
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"HTTP error in authentication. {self.reason}"
 
 
 class CrashingSquareNumberWorker:
-    def run(self, msg, num, *args):
+    def run(self, msg: str, num: float, *args: Tuple[Any, ...]) -> float:
         time.sleep(0.1)
         if num == 1337:
             a = []
@@ -35,11 +36,11 @@ class CrashingSquareNumberWorker:
 
 
 class ExceptionLambdaWorker:
-    def run(self):
+    def run(self) -> None:
         raise ExceptionWithLambda("annoying")
 
 
-def test_plain_exception():
+def test_plain_exception() -> None:
     pool = ProcessPool(CrashingSquareNumberWorker, 1)
     f1 = pool.submit_job("transform", 13)
     with pytest.raises(JobFailedException) as excinfo:
@@ -50,7 +51,7 @@ def test_plain_exception():
     assert pool.terminated
 
 
-def test_exception_lambda():
+def test_exception_lambda() -> None:
     pool = ProcessPool(ExceptionLambdaWorker, 1)
     f1 = pool.submit_job()
     with pytest.raises(Exception) as excinfo:
@@ -60,7 +61,7 @@ def test_exception_lambda():
     assert pool.terminated
 
 
-def test_exception_traceback():
+def test_exception_traceback() -> None:
     pool = ProcessPool(CrashingSquareNumberWorker, 1)
     f1 = pool.submit_job("transform", 13)
     exc = f1.exception()
@@ -71,12 +72,13 @@ def test_exception_traceback():
     assert pool.terminated
 
 
-def test_submit_or_join_after_terminate():
+def test_submit_or_join_after_terminate() -> None:
     pool = ProcessPool(CrashingSquareNumberWorker, 1)
     f1 = pool.submit_job("transform", 0)
     pool.terminate()
     with pytest.raises(WorkerDiedException) as excinfo:
         f1.result()
+    assert isinstance(excinfo.value.code, int)
     assert excinfo.value.code < 0
     with pytest.raises(ProcessPoolShutDownException):
         pool.submit_job("transform", 13)
@@ -85,7 +87,7 @@ def test_submit_or_join_after_terminate():
     assert pool.terminated
 
 
-def test_run_job_exception():
+def test_run_job_exception() -> None:
     pool = ProcessPool(CrashingSquareNumberWorker, 1)
     assert 16 == pool.run_job("transform", 4)
     with pytest.raises(JobFailedException):
@@ -94,10 +96,10 @@ def test_run_job_exception():
     assert pool.terminated
 
 
-def test_pickle_bad_arg_returned():
+def test_pickle_bad_arg_returned() -> None:
     class BadObjectReturner:
-        def run(self, *args):
-            bad_list = []
+        def run(self, *args: Tuple[Any, ...]) -> List[Any]:
+            bad_list: List[Any] = []
             for _ in range(10000):
                 bad_list = [0, bad_list]
             return bad_list
@@ -113,8 +115,8 @@ def test_pickle_bad_arg_returned():
     assert pool.terminated
 
 
-def test_pickle_bad_arg_given():
-    bad_arg = []
+def test_pickle_bad_arg_given() -> None:
+    bad_arg: List[Any] = []
     for _ in range(10000):
         bad_arg = [0, bad_arg]
 
@@ -129,7 +131,7 @@ def test_pickle_bad_arg_given():
     assert pool.terminated
 
 
-def test_crash():
+def test_crash() -> None:
     pool = ProcessPool(CrashingSquareNumberWorker, 1)
     f1 = pool.submit_job("transform", num=1)
     f2 = pool.submit_job("transform", 1337)

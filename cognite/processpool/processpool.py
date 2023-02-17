@@ -5,36 +5,40 @@ import sys
 import time
 from concurrent.futures import Future
 from threading import Thread
-from typing import Any
+from types import TracebackType
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
-from tblib import pickling_support
+from tblib import pickling_support  # type: ignore[import]
 
 SLEEP_TICK = 0.001  # Duration in seconds used to sleep when waiting for results
+
+Job = Tuple[Tuple[Any, ...], Dict[str, Any], Future]
+Result = Any
 
 
 class WorkerDiedException(Exception):
     """Raised when getting the result of a job where the process died while executing it for any reason."""
 
-    def __init__(self, message, code=None):
+    def __init__(self, message: str, code: Optional[Union[str, int]] = None):
         self.code = code
         self.message = message
 
-    def __reduce__(self):
+    def __reduce__(self) -> Tuple[Type[Exception], Tuple[str, Optional[Union[str, int]]]]:
         return (WorkerDiedException, (self.message, self.code))
 
 
 class JobFailedException(Exception):
     """Raised when a job fails with a normal exception."""
 
-    def __init__(self, message, original_exception_type=None):
+    def __init__(self, message: str, original_exception_type: Optional[str] = None):
         self.original_exception_type = original_exception_type
         self.message = message
         super().__init__(message)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.__class__.__name__}: {self.original_exception_type}({self.message})"
 
-    def __reduce__(self):
+    def __reduce__(self) -> Tuple[Type[Exception], Tuple[str, Optional[str]]]:
         return (JobFailedException, (self.message, self.original_exception_type))
 
 
@@ -46,11 +50,13 @@ class ProcessPoolShutDownException(Exception):
 
 @pickling_support.install
 class _WrappedWorkerException(Exception):  # we need this since tracebacks aren't pickled by default and therefore lost
-    def __init__(self, exception_str, exception_cls=None, traceback=None):
+    def __init__(
+        self, exception_str: str, exception_cls: Optional[str] = None, traceback: Optional[TracebackType] = None
+    ):
         # don't pickle problematic exception classes
         self.exception = JobFailedException(exception_str, exception_cls)
         if traceback is None:
-            __, __, self.traceback = sys.exc_info()
+            self.traceback: Optional[TracebackType] = sys.exc_info()[2]
         else:
             self.traceback = traceback
 
@@ -58,15 +64,15 @@ class _WrappedWorkerException(Exception):  # we need this since tracebacks aren'
 class _WorkerHandler:
     def __init__(self, worker_class: type):  # Runs in the main process
         self.worker_class = worker_class
-        self.busy_with_future = None
-        self.send_q = multiprocessing.Queue()  # type: multiprocessing.Queue
-        self.recv_q = multiprocessing.Queue()  # type: multiprocessing.Queue
+        self.busy_with_future: Optional[Future[Result]] = None
+        self.send_q: "multiprocessing.Queue[bytes]" = multiprocessing.Queue()
+        self.recv_q: "multiprocessing.Queue[bytes]" = multiprocessing.Queue()
         self.process = multiprocessing.Process(
             target=self._worker_job_loop, args=(self.worker_class, self.recv_q, self.send_q)
         )
         self.process.start()
 
-    def send(self, job):
+    def send(self, job: Job) -> None:
         args, kwargs, future = job
         self.busy_with_future = future
         try:
@@ -74,7 +80,7 @@ class _WorkerHandler:
         except Exception as error:  # pickle errors
             self.recv_q.put(pickle.dumps((None, _WrappedWorkerException(str(error), error.__class__.__name__))))
 
-    def result(self):
+    def result(self) -> Optional[Tuple[Result, Exception]]:
         if not self.busy_with_future:
             return None
         try:
@@ -94,8 +100,8 @@ class _WorkerHandler:
 
     @staticmethod
     def _worker_job_loop(
-        worker_class: type, recv_q: multiprocessing.Queue, send_q: multiprocessing.Queue
-    ):  # Runs in a subprocess
+        worker_class: type, recv_q: "multiprocessing.Queue[bytes]", send_q: "multiprocessing.Queue[bytes]"
+    ) -> None:  # Runs in a subprocess
         worker = worker_class()
         while True:
             args, kwargs = pickle.loads(send_q.get(block=True))
@@ -129,14 +135,14 @@ class ProcessPool:
 
         self._pool = [self._create_new_worker() for _ in range(pool_size)]
 
-        self._job_queue = queue.Queue()  # type: queue.Queue # no need for a MP queue here
+        self._job_queue: queue.Queue[Optional[Job]] = queue.Queue()  # no need for a MP queue here
         self._job_loop = Thread(target=self._job_manager_thread, daemon=True)
         self._job_loop.start()
 
-    def _create_new_worker(self):
+    def _create_new_worker(self) -> _WorkerHandler:
         return _WorkerHandler(self.worker_class)
 
-    def join(self):
+    def join(self) -> None:
         """Waits for jobs to finish and shuts down the pool."""
         self.shutting_down = True
         if self.terminated:
@@ -145,25 +151,25 @@ class ProcessPool:
             time.sleep(SLEEP_TICK)
         self.terminate()  # could be gentler on the children
 
-    def terminate(self):
+    def terminate(self) -> None:
         """Terminates all sub-processes and stops the pool immediately."""
         self.terminated = True
         for worker in self._pool:
             worker.process.terminate()
         self._job_queue.put(None)  # in case it's blocking
 
-    def kill(self):
+    def kill(self) -> None:
         """Kills all sub-processes and stops the pool immediately."""
         self.terminated = True
         for worker in self._pool:
             worker.process.kill()
         self._job_queue.put(None)  # in case it's blocking
 
-    def _job_manager_thread(self):
+    def _job_manager_thread(self) -> None:
         """Manages dispatching jobs to processes, checking results, sending them to futures and restarting if they die"""
         while True:
-            busy_procs = []
-            idle_procs = []
+            busy_procs: List[int] = []
+            idle_procs: List[int] = []
             for wix, worker in enumerate(self._pool):
                 if worker.busy_with_future:
                     try:
@@ -202,14 +208,14 @@ class ProcessPool:
                 return
             self._pool[idle_procs[0]].send(job)
 
-    def submit_job(self, *args, **kwargs) -> Future:
+    def submit_job(self, *args: Any, **kwargs: Any) -> Future[Result]:
         """Submits job asynchronously, which will eventually call the `run` method in worker_class with the arguments given, all of which should be picklable."""
         if self.terminated or self.shutting_down:
             raise ProcessPoolShutDownException("Worker pool shutting down or terminated, can not submit new jobs")
-        future = Future()  # type: Future
+        future: Future[Result] = Future()
         self._job_queue.put((args, kwargs, future))
         return future
 
-    def run_job(self, *args, **kwargs) -> Any:
+    def run_job(self, *args: Any, **kwargs: Any) -> Result:
         """Submits job and blocks to wait for result. Returns the result or raises any Exception encountered. Should typically only be called from a thread."""
         return self.submit_job(*args, **kwargs).result()

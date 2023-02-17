@@ -8,11 +8,19 @@ repos:
     rev: 23.1.0
     hooks:
     - id: black
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v0.991
+  - repo: local
     hooks:
       - id: mypy
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v2.5.0
+        name: mypy
+        language: system
+        pass_filenames: false
+        entry: poetry run mypy -p cognite -p tests
+        args:
+          - --install-types
+          - --non-interactive
+          - --strict
+          - --show-error-codes
+  - repo: https://github.com/PyCQA/flake8
+    rev: 6.0.0
     hooks:
       - id: flake8
