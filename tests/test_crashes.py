@@ -26,6 +26,14 @@ class AuthHTTPError(Exception):
         return f"HTTP error in authentication. {self.reason}"
 
 
+class BadObjectReturner:
+    def run(self, *args: Tuple[Any, ...]) -> List[Any]:
+        bad_list: List[Any] = []
+        for _ in range(10000):
+            bad_list = [0, bad_list]
+        return bad_list
+
+
 class CrashingSquareNumberWorker:
     def run(self, msg: str, num: float, *args: Tuple[Any, ...]) -> float:
         time.sleep(0.1)
@@ -100,13 +108,6 @@ def test_run_job_exception() -> None:
 
 
 def test_pickle_bad_arg_returned() -> None:
-    class BadObjectReturner:
-        def run(self, *args: Tuple[Any, ...]) -> List[Any]:
-            bad_list: List[Any] = []
-            for _ in range(10000):
-                bad_list = [0, bad_list]
-            return bad_list
-
     pool = ProcessPool(BadObjectReturner, 1)
     f1 = pool.submit_job(":(")
     with pytest.raises(Exception) as excinfo:  # not working

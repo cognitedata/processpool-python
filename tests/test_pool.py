@@ -37,7 +37,7 @@ def test_submit_or_join_after_join() -> None:
 
 def test_many() -> None:
     pool = ProcessPool(SquareNumberWorker, 4)
-    futures = [pool.submit_job(i) for i in range(100)]
+    futures = [pool.submit_job("transform", i) for i in range(100)]
     result = [f.result() for f in futures]
     assert [n * n for n in range(100)] == result
     pool.join()
