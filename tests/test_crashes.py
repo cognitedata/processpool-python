@@ -1,5 +1,8 @@
+import os
+import signal
 import time
 import traceback
+from multiprocessing import process
 from typing import Any, List, Tuple
 
 import pytest
@@ -27,9 +30,9 @@ class CrashingSquareNumberWorker:
     def run(self, msg: str, num: float, *args: Tuple[Any, ...]) -> float:
         time.sleep(0.1)
         if num == 1337:
-            a = []
-            while True:
-                a.extend([0] * 1000000)
+            pid = process.current_process().pid
+            assert pid is not None
+            os.kill(pid, signal.SIGKILL)
         if num == 13:
             raise ValueError("Got unlucky!")
         return num * num
