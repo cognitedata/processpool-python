@@ -64,7 +64,7 @@ class _WrappedWorkerException(Exception):  # we need this since tracebacks aren'
 class _WorkerHandler:
     def __init__(self, worker_class: type):  # Runs in the main process
         self.worker_class = worker_class
-        self.busy_with_future: Optional[Future[Result]] = None
+        self.busy_with_future: "Optional[Future[Result]]" = None
         self.send_q: "multiprocessing.Queue[bytes]" = multiprocessing.Queue()
         self.recv_q: "multiprocessing.Queue[bytes]" = multiprocessing.Queue()
         self.process = multiprocessing.Process(
@@ -135,7 +135,7 @@ class ProcessPool:
 
         self._pool = [self._create_new_worker() for _ in range(pool_size)]
 
-        self._job_queue: queue.Queue[Optional[Job]] = queue.Queue()  # no need for a MP queue here
+        self._job_queue: "queue.Queue[Optional[Job]]" = queue.Queue()  # no need for a MP queue here
         self._job_loop = Thread(target=self._job_manager_thread, daemon=True)
         self._job_loop.start()
 
@@ -208,11 +208,11 @@ class ProcessPool:
                 return
             self._pool[idle_procs[0]].send(job)
 
-    def submit_job(self, *args: Any, **kwargs: Any) -> Future[Result]:
+    def submit_job(self, *args: Any, **kwargs: Any) -> "Future[Result]":
         """Submits job asynchronously, which will eventually call the `run` method in worker_class with the arguments given, all of which should be picklable."""
         if self.terminated or self.shutting_down:
             raise ProcessPoolShutDownException("Worker pool shutting down or terminated, can not submit new jobs")
-        future: Future[Result] = Future()
+        future: "Future[Result]" = Future()
         self._job_queue.put((args, kwargs, future))
         return future
 
