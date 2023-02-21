@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "cognite-processpool"
-version = "0.6.0"
+version = "0.7.0"
 description = "Stable process pool library"
 authors = ["Sander Land <sander.land@cognite.com>"]
 
@@ -22,14 +22,15 @@ known_third_party = ["pytest", "tblib"]
 
 
 [tool.poetry.dependencies]
-python = "^3.7"
+python = "^3.8"
 tblib = "^1.6.0"
 
 [tool.poetry.dev-dependencies]
 pre-commit = "^2.20.0"
-pytest = "^5.4.1"
-pytest-cov = "^2.8.1"
+pytest = "^7.2.1"
+pytest-cov = "^4.0.0"
 twine = "^3.1.1"
+mypy = "^1.0.0"
 
 
 [[tool.poetry.source]]

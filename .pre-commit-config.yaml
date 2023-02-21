@@ -1,18 +1,26 @@
 repos:
--   repo: https://github.com/timothycrosley/isort
-    rev: 5.6.4
+  - repo: https://github.com/timothycrosley/isort
+    rev: 5.11.5
     hooks:
-        - id: isort
-    name: isort (python)
--   repo: https://github.com/psf/black
-    rev: 22.3.0
+      - id: isort
+        name: isort (python)
+  - repo: https://github.com/psf/black
+    rev: 23.1.0
     hooks:
-        - id: black
--   repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v0.770
+    - id: black
+  - repo: local
     hooks:
-    -   id: mypy
--   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v2.5.0
+      - id: mypy
+        name: mypy
+        language: system
+        pass_filenames: false
+        entry: poetry run mypy -p cognite -p tests
+        args:
+          - --install-types
+          - --non-interactive
+          - --strict
+          - --show-error-codes
+  - repo: https://github.com/PyCQA/flake8
+    rev: 6.0.0
     hooks:
-    - id: flake8
+      - id: flake8

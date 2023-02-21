@@ -12,11 +12,11 @@ class KWArgException(Exception):
 
 
 class KWArgExceptionWorker:
-    def run(self):
+    def run(self) -> None:
         raise KWArgException(reason="reason", response="response")
 
 
-def test_exception_multiarg():
+def test_exception_multiarg() -> None:
     pool = ProcessPool(KWArgExceptionWorker, 1)
     f1 = pool.submit_job()
     with pytest.raises(JobFailedException) as excinfo:

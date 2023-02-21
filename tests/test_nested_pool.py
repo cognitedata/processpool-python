@@ -4,21 +4,21 @@ from cognite.processpool import ProcessPool
 
 
 class SquareNumberWorker:
-    def run(self, msg, num):
+    def run(self, msg: str, num: float) -> float:
         time.sleep(abs(0.02 * (num - 5)))
         return num * num
 
 
 class PoolWorker:
-    def run(self, num_workers):
+    def run(self, num_workers: int) -> float:
         pool = ProcessPool(SquareNumberWorker, num_workers)
         jobs = [pool.submit_job("transform", i) for i in range(num_workers)]
-        results = sum([j.result() for j in jobs])
+        results: float = sum([j.result() for j in jobs])
         pool.join()
         return results
 
 
-def test_nested():
+def test_nested() -> None:
     num_workers = 10
     pool = ProcessPool(PoolWorker, 10)
     jobs = [pool.submit_job(i) for i in range(num_workers)]
