@@ -22,7 +22,7 @@ known_third_party = ["pytest", "tblib"]
 
 
 [tool.poetry.dependencies]
-python = "^3.7"
+python = "^3.8"
 tblib = "^1.6.0"
 
 [tool.poetry.dev-dependencies]
